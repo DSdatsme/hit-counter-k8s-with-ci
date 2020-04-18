@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('Test Linting') {
             steps {
-                sh 'cd frontend && pip3 install -r requirements.txt && find . -type f -name "*.py" | xargs pylint'
+                sh 'find . -type f -name "*.py" | xargs pylint'
             }
         }
         stage('Docker Build') {
