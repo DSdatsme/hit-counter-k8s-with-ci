@@ -1,22 +1,26 @@
+"""Flask app which stores visit count in redis
+"""
 import time
 import logging
 import redis
 from flask import Flask
 import watchtower
 
-app = Flask(__name__)
-cache = redis.Redis(host='redis-master', port=6379)
+APP = Flask(__name__)
+CACHE = redis.Redis(host='redis-master', port=6379)
 
 # setup cloudwatch logger
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-logger.addHandler(watchtower.CloudWatchLogHandler()) # fetch from env AWS configuration
+LOGGER = logging.getLogger(__name__)
+LOGGER.addHandler(watchtower.CloudWatchLogHandler()) # fetch from env AWS configuration
 
 def get_hit_count():
+    """writes data to redis
+    """
     retries = 5
     while True:
         try:
-            return cache.incr('hits')
+            return CACHE.incr('hits')
         except redis.exceptions.ConnectionError as exc:
             if retries == 0:
                 raise exc
@@ -24,12 +28,14 @@ def get_hit_count():
             time.sleep(0.5)
 
 
-@app.route('/')
+@APP.route('/')
 def hit():
+    """Entry point for the app
+    """
     count = get_hit_count()
-    logger.info("website visited!")
+    LOGGER.info("website visited!")
     return 'I have been hit %i times since deployment.\n' % int(count)
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", debug=True)
+    APP.run(host="0.0.0.0", debug=True)
