@@ -137,3 +137,6 @@ Resources:
           Metrics:
             - 'GroupMinSize'
             - 'GroupMaxSize'
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
