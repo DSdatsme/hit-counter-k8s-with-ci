@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('Test Linting') {
             steps {
-                sh 'pwd && ls && find . -type f -name "*.py" | xargs pylint '
+                sh 'find . -type f -name "*.py" | xargs pylint '
             }
         }
         stage('Docker Build') {
