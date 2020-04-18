@@ -1,7 +1,7 @@
 import time
+import logging
 import redis
 from flask import Flask
-import logging
 import watchtower
 
 app = Flask(__name__)
