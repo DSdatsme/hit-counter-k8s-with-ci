@@ -10,6 +10,7 @@ pipeline {
         stage('Docker Build') {
             steps {
                 sh '''
+                echo $USER
                 cd frontend
                 docker build -t dsdatsme/python2-hit-counter  .
                 cd ..
