@@ -42,7 +42,7 @@ metadata:
   name: frontend-public
   namespace: counter
 spec:
-  type: NodePort
+  type: LoadBalancer
   ports:
   - port: 80
     protocol: TCP
