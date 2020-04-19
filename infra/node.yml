@@ -1,0 +1,190 @@
+Parameters:
+
+  KeyName:
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+
+  NetworkStack:
+    Type: String
+    Default: capstone-network
+    Description: VPC Stack Name
+
+  ClusterStack:
+    Type: String
+    Default: capstone-cluster
+    Description: Cluster Stack Name
+
+  NodeImageId:
+    Type: AWS::EC2::Image::Id
+    Description: AMI id for the node instances.
+    Default: ami-07ebfd5b3428b6f4d 
+
+  NodeInstanceType:
+    Description: EC2 instance type for the node instances
+    Type: String
+    Default: t2.medium
+
+  NodeAutoScalingGroupMinSize:
+    Type: Number
+    Description: Minimum size of Node Group ASG.
+    Default: 1
+
+  NodeAutoScalingGroupMaxSize:
+    Type: Number
+    Description: Maximum size of Node Group ASG.
+    Default: 3
+
+  ClusterName:
+    Description: The cluster name provided when the cluster was created.  If it is incorrect, nodes will not be able to join the cluster.
+    Default: Cluster-oPISIJnXMyIf
+    Type: String
+
+  NodeGroupName:
+    Description: Unique identifier for the Node Group.
+    Type: String
+    Default: 'capstone-node-group'
+
+Mappings:
+  MaxPodsPerNode:
+    t2.small:
+      MaxPods: 8
+    t2.medium:
+      MaxPods: 17
+    t2.large:
+      MaxPods: 35
+
+Resources:
+
+  NodeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref NodeInstanceRole
+
+  NodeInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+
+  NodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for all nodes in the cluster
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${NetworkStack}-VPCID"
+      Tags:
+      - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+        Value: 'owned'
+
+  NodeSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow node to communicate with each other
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: '-1'
+      FromPort: 0
+      ToPort: 65535
+
+  NodeSecurityGroupFromControlPlaneIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow worker Kubelets and pods to receive communication from the cluster control plane
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId:
+        Fn::ImportValue:
+          !Sub "${ClusterStack}-ClusterControlPlaneSecurityGroup"
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+
+  ControlPlaneEgressToNodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroupEgress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow the cluster control plane to communicate with worker Kubelet and pods
+      GroupId: 
+        Fn::ImportValue:
+          !Sub "${ClusterStack}-ClusterControlPlaneSecurityGroup"
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+
+  ClusterControlPlaneSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow pods to communicate with the cluster API Server
+      GroupId: 
+        Fn::ImportValue:
+          !Sub "${ClusterStack}-ClusterControlPlaneSecurityGroup"
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+      FromPort: 443
+
+  NodeGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: !Ref NodeAutoScalingGroupMaxSize
+      LaunchConfigurationName: !Ref NodeLaunchConfig
+      MinSize: !Ref NodeAutoScalingGroupMinSize
+      MaxSize: !Ref NodeAutoScalingGroupMaxSize
+      VPCZoneIdentifier:
+        - Fn::ImportValue:
+            !Sub "${NetworkStack}-PublicSubnet1ID"
+        - Fn::ImportValue:
+            !Sub "${NetworkStack}-PublicSubnet2ID"
+      Tags:
+      - Key: Name
+        Value: !Sub "${ClusterName}-${NodeGroupName}-Node"
+        PropagateAtLaunch: 'true'
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: 'owned'
+        PropagateAtLaunch: 'true'
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: '1'
+        MaxBatchSize: '1'
+
+  NodeLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: 'true'
+      IamInstanceProfile: !Ref NodeInstanceProfile
+      ImageId: !Ref NodeImageId
+      InstanceType: !Ref NodeInstanceType
+      KeyName: !Ref KeyName
+      SecurityGroups:
+      - !Ref NodeSecurityGroup
+      UserData:
+        Fn::Base64:
+          Fn::Join: [
+            "",
+            [
+              "#!/bin/bash -xe\n",
+              "systemctl restart kubelet", "\n",
+              "/opt/aws/bin/cfn-signal -e $? ",
+              "         --stack ", { Ref: "AWS::StackName" },
+              "         --resource NodeGroup ",
+              "         --region ", { Ref: "AWS::Region" }, "\n"
+            ]
+          ]

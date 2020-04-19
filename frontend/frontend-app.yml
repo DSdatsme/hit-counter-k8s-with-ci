@@ -15,6 +15,11 @@ spec:
   selector:
     matchLabels:
       app: frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 50%
+      maxSurge: 1
   template:
     metadata:
       labels:
@@ -39,7 +44,7 @@ metadata:
 spec:
   type: NodePort
   ports:
-  - port: 8008
+  - port: 80
     protocol: TCP
     targetPort: 5000
   selector:

@@ -35,5 +35,10 @@ pipeline {
                 '''
             }
         }
+        stage('Deploy Kubernetes') {
+            steps {
+                sh 'kubectl apply -f frontend/frontend-app.yml'
+            }
+    }
     }
 }
