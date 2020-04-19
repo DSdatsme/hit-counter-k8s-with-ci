@@ -27,14 +27,6 @@ pipeline {
                 '''
             }
         }
-        stage('Docker Push') {
-            steps {
-                sh '''
-                cd infra
-                aws cloudformation update-stack --stack-name devops-capstone --template-body file://setup_infra.yml --parameters file://parameters.json --region us-east-1 --capabilities CAPABILITY_NAMED_IAM
-                '''
-            }
-        }
         stage('Deploy Kubernetes') {
             steps {
                 sh 'kubectl apply -f frontend/frontend-app.yml'
